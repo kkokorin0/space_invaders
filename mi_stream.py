@@ -3,13 +3,10 @@ import socket
 import pandas as pd
 import pickle
 from pylsl import StreamInlet, resolve_stream
-from space_invaders import TRAIN_FLAG
 from scipy import signal
-from sklearn.model_selection import train_test_split
 from sklearn.model_selection import RepeatedStratifiedKFold
 from sklearn.model_selection import cross_val_score
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
-from sklearn.metrics import confusion_matrix
 
 
 def record_epoch(inlet, Ns, Nch, folder, msg, index):
@@ -85,7 +82,7 @@ def build_classifier(folder, Fs, Nch, n_trials, mi_start, mi_stop, mi_len,
     pickle.dump(model, open(model_file, 'wb'))
 
 
-def get_training_data(window_size_ms, Fs, Nch, server_socket, buffer_size, folder):
+def get_training_data(window_size_ms, Fs, Nch, n_trials, server_socket, buffer_size, folder):
     # first resolve an EEG stream on the lab network
     print('looking for an EEG stream...')
     streams = resolve_stream('type', 'EEG')
@@ -100,7 +97,7 @@ def get_training_data(window_size_ms, Fs, Nch, server_socket, buffer_size, folde
     # record eeg data
     left_i = 0
     right_i = 0
-    while get_training_data:
+    while (left_i < n_trials) or (right_i < n_trials):
         # keep running the non-blocking udp and make sure you run the eeg
         try:
             msgFromServer, addr = server_socket.recvfrom(buffer_size)
@@ -113,40 +110,37 @@ def get_training_data(window_size_ms, Fs, Nch, server_socket, buffer_size, folde
             elif isinstance(msg, str) and msg == 'RIGHT':
                 record_epoch(inlet, Ns, Nch, folder, msg, right_i)
                 right_i += 1
-            elif int(msg) == TRAIN_FLAG:
-                print('Stop training')
-                break
 
         # non-blocking socket will return error if no msg
         except socket.error:
             pass
     print('Completed %d left and %d right trials' % (left_i, right_i))
-    exit(0)
 
-    def process_online_data():
-        # msg = 1
-        n_samples = 0
-        while True:
-            # get a new sample
-            eeg_sample, timestamp = inlet.pull_sample()
 
-            #store samples
-            eeg_data[n_samples,:] = eeg_sample
-            n_samples += 1
-
-            if n_samples >= slide_win:
-                n_samples = 0
-                while True:
-                    # get a new sample
-                    eeg_sample, timestamp = inlet.pull_sample()
-                    eeg_data[:-1,:] = eeg_data[1:,:].copy()
-                    eeg_data[-1,:] = eeg_sample
-                    n_samples += 1
-
-                    if n_samples == output_hz*Fs:
-                        # Put classifier here to give output
-                        msg = model.predict(eeg_data)
-                        msg_encode = str.encode(str(msg))
-                        server_socket.sendto(msg_encode, addr)
-                        print(msg)
-                        n_samples = 0
+def process_online_data():
+    # msg = 1
+    n_samples = 0
+    # while True:
+    #     # get a new sample
+    #     eeg_sample, timestamp = inlet.pull_sample()
+    #
+    #     #store samples
+    #     eeg_data[n_samples,:] = eeg_sample
+    #     n_samples += 1
+    #
+    #     if n_samples >= slide_win:
+    #         n_samples = 0
+    #         while True:
+    #             # get a new sample
+    #             eeg_sample, timestamp = inlet.pull_sample()
+    #             eeg_data[:-1,:] = eeg_data[1:,:].copy()
+    #             eeg_data[-1,:] = eeg_sample
+    #             n_samples += 1
+    #
+    #             if n_samples == output_hz*Fs:
+    #                 # Put classifier here to give output
+    #                 msg = model.predict(eeg_data)
+    #                 msg_encode = str.encode(str(msg))
+    #                 server_socket.sendto(msg_encode, addr)
+    #                 print(msg)
+    #                 n_samples = 0

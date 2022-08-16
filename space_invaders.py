@@ -2,8 +2,6 @@ import pygame
 import time
 import random
 
-TRAIN_FLAG = 666
-
 
 class Game:
     screen = None
@@ -13,36 +11,36 @@ class Game:
     width = 0
     height = 0
 
-    def __init__(self, width, height, client_socket, local_ip, local_port,
-                 buffer_size, n_trials, trial_s):
+    def __init__(self, width, height):
         pygame.init()
         self.width = width
         self.height = height
         self.screen = pygame.display.set_mode((width, height), display=0)
         self.clock = pygame.time.Clock()
-        done = False
+        self.generator = Generator(self)
+        self.speed = 1
+        self.rocket = None
 
-        generator = Generator(self)
-        speed = 1
-        rocket = None
-        count = 0
-
+    def run_training(self, client_socket, local_ip, local_port, n_trials,
+                     trial_s):
         directions = ["LEFT", "RIGHT"] * n_trials
         random.shuffle(directions)
         print(directions)
         if directions[0] == "LEFT":
-            hero = Hero(self, random.randint(width // 1.5, width - 20), height - 20)
+            hero = Hero(self, random.randint(self.width // 1.5, self.width - 20),
+                        self.height - 20)
         else:
-            hero = Hero(self, random.randint(20, width // 2.5), height - 20)
+            hero = Hero(self, random.randint(20, self.width // 2.5), self.height - 20)
 
         # Start with blank
         pygame.font.init()
-        font = pygame.font.SysFont('Arial', 150)
+        pygame.font.SysFont('Arial', 150)
         self.show_msg('READY', 2000)
 
         # Training
+        count = 0
+        done = False
         for d_ind in range(len(directions)):
-            aliens = []
             direction = directions[d_ind]
             self.show_msg(direction, 2000)  # let user know the direction
 
@@ -58,10 +56,10 @@ class Game:
             while not done:
                 if direction == "LEFT":  # sipka doleva
                     if hero.x > 20:
-                        hero.x -= speed
+                        hero.x -= self.speed
                 else:
-                    if hero.x < width - 20:
-                        hero.x += speed
+                    if hero.x < self.width - 20:
+                        hero.x += self.speed
 
                 for event in pygame.event.get():
                     if event.type == pygame.QUIT:
@@ -84,11 +82,11 @@ class Game:
                     print('Execution time:', elapsed_time, 'seconds')
                     try:
                         if directions[d_ind + 1] == "LEFT":
-                            hero.x = random.randint(width // 1.5, width - 20)
+                            hero.x = random.randint(self.width // 1.5, self.width - 20)
                             print(hero.x)
                         else:
-                            hero.x = random.randint(20, width // 2.5)
-                        generator = Generator(self)
+                            hero.x = random.randint(20, self.width // 2.5)
+                        Generator(self)
                         pygame.display.flip()
                     except:
                         None
@@ -96,10 +94,10 @@ class Game:
 
                 for alien in self.aliens:
                     alien.draw()
-                    alien.checkCollision(self)
-                    if alien.y > height:
+                    alien.check_collision(self)
+                    if alien.y > self.height:
                         self.lost = True
-                        self.displayText("YOU DIED")
+                        self.display_text("YOU DIED")
                         pygame.time.delay(2000)
                         done = True
 
@@ -110,28 +108,23 @@ class Game:
                     hero.draw()
             self.show_msg('', 2000)  # blank screen after trial
 
-        bytesToSend = str.encode(str(TRAIN_FLAG))
-        client_socket.sendto(bytesToSend, (local_ip, local_port))
-
-        hero = Hero(self, width / 2, height - 20)
-
-        # Finished training
-        done = True
-
+    def run_online(self, client_socket, buffer_size, ):
         # Play Game
-        aliens = []
+        count = 0
+        hero = Hero(self, self.width / 2, self.height - 20)
+        done = False
         while not done:
             direction, addr = client_socket.recvfrom(buffer_size)
             direction = int(direction.decode(encoding='UTF-8', errors='strict'))
             print(direction)
 
             if len(self.aliens) == 0:
-                self.displayText("VICTORY ACHIEVED")
+                self.display_text("VICTORY ACHIEVED")
 
             if direction == 1:
                 st = time.time()
                 while time.time() - st < 1:
-                    hero.x -= speed if hero.x > 20 else 0
+                    hero.x -= self.speed if hero.x > 20 else 0
                     for event in pygame.event.get():
                         if event.type == pygame.QUIT:
                             done = True
@@ -147,10 +140,10 @@ class Game:
 
                     for alien in self.aliens:
                         alien.draw()
-                        alien.checkCollision(self)
-                        if (alien.y > height):
+                        alien.check_collision(self)
+                        if alien.y > self.height:
                             self.lost = True
-                            self.displayText("YOU DIED")
+                            self.display_text("YOU DIED")
 
                     for rocket in self.rockets:
                         rocket.draw()
@@ -160,7 +153,7 @@ class Game:
             elif direction == -1:
                 st = time.time()
                 while time.time() - st < 1:
-                    hero.x += speed if hero.x < width - 20 else 0
+                    hero.x += self.speed if hero.x < self.width - 20 else 0
                     for event in pygame.event.get():
                         if event.type == pygame.QUIT:
                             done = True
@@ -176,10 +169,10 @@ class Game:
 
                     for alien in self.aliens:
                         alien.draw()
-                        alien.checkCollision(self)
-                        if (alien.y > height):
+                        alien.check_collision(self)
+                        if alien.y > self.height:
                             self.lost = True
-                            self.displayText("YOU DIED")
+                            self.display_text("YOU DIED")
 
                     for rocket in self.rockets:
                         rocket.draw()
@@ -187,7 +180,7 @@ class Game:
                     if not self.lost:
                         hero.draw()
 
-    def displayText(self, text):
+    def display_text(self, text):
         pygame.font.init()
         font = pygame.font.SysFont('Arial', 150)
         textsurface = font.render(text, False, (255, 255, 255))
@@ -195,11 +188,11 @@ class Game:
 
     def show_msg(self, text, duration):
         self.screen.fill((0, 0, 0))
-        self.displayText(text)
+        self.display_text(text)
         pygame.display.flip()
         pygame.time.delay(500)
         self.screen.fill((0, 0, 0))
-        self.displayText('')
+        self.display_text('')
         pygame.display.flip()
         pygame.time.delay(duration - 500)
 
@@ -217,7 +210,7 @@ class Alien:
                          pygame.Rect(self.x, self.y, self.size, self.size))
         # self.y += 0.05
 
-    def checkCollision(self, game):
+    def check_collision(self, game):
         for rocket in game.rockets:
             if ((rocket.x < self.x + self.size) and (rocket.x > self.x - self.size) and
                     (rocket.y < self.y + self.size) and (rocket.y > self.y - self.size)):
