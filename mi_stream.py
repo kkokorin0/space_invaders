@@ -1,156 +1,152 @@
-import serial
-import scipy
 import numpy as np
-from pylsl import StreamInlet, resolve_stream
 import socket
-import os
-import pygame
+import pandas as pd
+import pickle
+from pylsl import StreamInlet, resolve_stream
+from space_invaders import TRAIN_FLAG
+from scipy import signal
+from sklearn.model_selection import train_test_split
+from sklearn.model_selection import RepeatedStratifiedKFold
+from sklearn.model_selection import cross_val_score
+from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
+from sklearn.metrics import confusion_matrix
 
-def process_eeg_block(time_data, eeg_data, title, trial_n):
-    print(time_data.shape, eeg_data.shape)
-    np.savetxt("MI_trials/"+title+"_"+str(trial_n)+".csv", eeg_data, delimiter=",")
-    return
 
-def read_eeg_data(window_size, Fs, Nch, trial_n):
+def record_epoch(inlet, Ns, Nch, folder, msg, index):
+    eeg_data = np.zeros((Ns, Nch))
+    time_data = np.zeros(Ns)
+    n_samples = 0
+
+    while n_samples < Ns:
+        # get a new sample
+        eeg_sample, timestamp = inlet.pull_sample()
+        eeg_data[n_samples, :] = eeg_sample
+        time_data[n_samples] = timestamp
+        n_samples += 1
+
+    fname = '%s//%s_%d.csv' % (folder, msg, index+1)
+    np.savetxt(fname, eeg_data, delimiter=",")
+
+
+def build_classifier(folder, Fs, Nch, n_trials, mi_start, mi_stop, mi_len,
+                     bp_order=10, stopband_db=40):
+    # bp_sos_mu = signal.cheby2(N=bp_order, rs=stopband_db, Wn=[2, 13],
+    #                           btype='bandpass', analog=False, output='sos', fs=Fs)
+    bp_sos_beta = signal.cheby2(N=bp_order, rs=stopband_db, Wn=[2, 20],
+                                btype='bandpass', analog=False, output='sos', fs=Fs)
+    Nfilt = 1
+
+    # total trials after subdivision
+    n_slices = (mi_stop - mi_start) // mi_len
+    n_split_trials = n_trials*n_slices
+    y = np.array([0]*n_split_trials + [1]*n_split_trials)  # 0 left, 1 right
+    X = np.zeros((n_split_trials*2, Nch*Nfilt))
+    split_i = 0
+
+    print('Feature extraction')
+    for direction in ['LEFT', 'RIGHT']:
+        for trial_i in range(1, n_trials+1):
+            # read data from csv
+            fname = '%s//%s_%d.csv' % (folder, direction, trial_i)
+            raw_data = pd.read_csv(fname, header=None).to_numpy()
+
+            # common average reference
+            rref_data = raw_data.transpose() - np.mean(raw_data, axis=1)
+
+            # bandpass
+            # filtered_mu = signal.sosfilt(bp_sos_mu, rref_data.transpose(), axis=0)
+            filtered_beta = signal.sosfilt(bp_sos_beta, rref_data.transpose(), axis=0)
+            # filtered_data = np.concatenate((filtered_mu, filtered_beta), axis=1)
+            filtered_data = filtered_beta
+
+            # subdivide each trial
+            imagery_data = filtered_data[mi_start:mi_stop, :]
+            split_data = np.reshape(imagery_data, (n_slices, mi_len, -1))
+
+            # extract log-variance features
+            for slice_i in range(0, n_slices):
+                eeg_slice = split_data[slice_i, :, :]
+                var = np.var(eeg_slice, axis=0)
+                X[split_i, :] = np.log(var/sum(var))
+                split_i += 1
+
+    print('Building classifier')
+
+    # LDA classifier
+    model = LinearDiscriminantAnalysis(shrinkage='auto', solver='lsqr')
+    model.fit(X, y)
+
+    # cross validation
+    cv = RepeatedStratifiedKFold(n_splits=10, n_repeats=3, random_state=1)
+    scores = cross_val_score(model, X, y, scoring='accuracy', cv=cv, n_jobs=-1)
+    print('Cross validation mean=%.2f var=%.2f' % (np.mean(scores), np.var(scores)))
+
+    model_file = '%s//clf.sav' % folder
+    pickle.dump(model, open(model_file, 'wb'))
+
+
+def get_training_data(window_size_ms, Fs, Nch, server_socket, buffer_size, folder):
     # first resolve an EEG stream on the lab network
-    print("looking for an EEG stream...")
+    print('looking for an EEG stream...')
     streams = resolve_stream('type', 'EEG')
+    print('EEG stream found')
+
     # create a new inlet to read from the stream
     inlet = StreamInlet(streams[0])
 
-    #store batch data
-    samples_per_window = Fs*window_size//1000
+    # store batch data
+    Ns = Fs*window_size_ms//1000
 
-    eeg_data = np.zeros((samples_per_window, Nch))
-    time_data = np.zeros(samples_per_window)
-
-    eeg_sample, start_time = inlet.pull_sample()
-    eeg_data[0, :] = eeg_sample
-    time_data[0] = start_time
-    n_samples = 1
-
-    #record
-    while True:
-        # get a new sample to maintain synchrony?
-        eeg_sample, timestamp = inlet.pull_sample()
-        # print(int(np.mean(eeg_sample)))
-
-        try: # Keep running the non-blocking udp and make sure you run the eeg
-        # if UDPClientSocket.recv is not None:
-            msgFromServer, addr = UDPClientSocket.recvfrom(bufferSize)
-            msg = msgFromServer.decode(encoding = 'UTF-8', errors = 'strict')
+    # record eeg data
+    left_i = 0
+    right_i = 0
+    while get_training_data:
+        # keep running the non-blocking udp and make sure you run the eeg
+        try:
+            msgFromServer, addr = server_socket.recvfrom(buffer_size)
+            msg = msgFromServer.decode(encoding='UTF-8', errors='strict')
             print("Direction: ", msg)
 
-            if int(msg) != 666:
-                while n_samples < samples_per_window:
-                    # get a new sample
-                    eeg_sample, timestamp = inlet.pull_sample()
-
-                    #store samples
-                    eeg_data[n_samples,:] = eeg_sample
-                    time_data[n_samples] = timestamp
-                    n_samples += 1
-
-                    if n_samples >= samples_per_window:
-                        print((timestamp-start_time)*1000)
-                        time_window = time_data[:]
-                        eeg_window = eeg_data[:,:]
-
-                        process_eeg_block(time_window, eeg_window, msg, trial_n)
-                        start_time = timestamp
-                        trial_n += 1
-
-                        print("Stop")
-                n_samples = 0
-            else:
-                print("Stop training")
+            if isinstance(msg, str) and msg == 'LEFT':
+                record_epoch(inlet, Ns, Nch, folder, msg, left_i)
+                left_i += 1
+            elif isinstance(msg, str) and msg == 'RIGHT':
+                record_epoch(inlet, Ns, Nch, folder, msg, right_i)
+                right_i += 1
+            elif int(msg) == TRAIN_FLAG:
+                print('Stop training')
                 break
 
-        except socket.error: # Non-blocking EEG will return error if none
+        # non-blocking socket will return error if no msg
+        except socket.error:
             pass
+    print('Completed %d left and %d right trials' % (left_i, right_i))
+    exit(0)
 
-    ############################################################################
-    # Read data and fit classifier
-    import os
-    import glob
+    def process_online_data():
+        # msg = 1
+        n_samples = 0
+        while True:
+            # get a new sample
+            eeg_sample, timestamp = inlet.pull_sample()
 
-    path = 'MI_trials'
-    extension = 'csv'
-    os.chdir(path)
-    csvFiles = glob.glob('*.{}'.format(extension))
-    # print(csvFiles)
+            #store samples
+            eeg_data[n_samples,:] = eeg_sample
+            n_samples += 1
 
-    from numpy import genfromtxt
-    slideWin = Fs * 2
-    outputHz = 1
-    all_trials = []
-    y = []
-    for csvFile in csvFiles:
-        file = genfromtxt(csvFile, delimiter=',')
-        trialType = int(csvFile.split('_')[0])
-        # print(trialType, file.shape)
+            if n_samples >= slide_win:
+                n_samples = 0
+                while True:
+                    # get a new sample
+                    eeg_sample, timestamp = inlet.pull_sample()
+                    eeg_data[:-1,:] = eeg_data[1:,:].copy()
+                    eeg_data[-1,:] = eeg_sample
+                    n_samples += 1
 
-        for i in range(0, file.shape[0]-(slideWin-Fs), outputHz*Fs):
-            trial = file[i:i+slideWin, :]
-            var = np.var(trial, axis=0)
-            log_var = np.log(var/sum(var))
-            all_trials.append(log_var)
-            y.append(trialType)
-    X = np.array(all_trials)
-    y = np.array(y)
-    n_channels = X.shape[-1]
-    n_trials = X.shape[0]
-    print(X.shape, y.shape, n_channels)
-
-    from sklearn.discriminant_analysis import LinearDiscriminantAnalysis as LDA
-    model = LDA(shrinkage='auto', solver='eigen')
-    model.fit(X, y)
-    ############################################################################
-
-
-    # msg = 1
-    n_samples = 0
-    while True:
-        # get a new sample
-        eeg_sample, timestamp = inlet.pull_sample()
-
-        #store samples
-        eeg_data[n_samples,:] = eeg_sample
-        n_samples += 1
-
-        if n_samples >= slide_win:
-            n_samples = 0
-            while True:
-                # get a new sample
-                eeg_sample, timestamp = inlet.pull_sample()
-                eeg_data[:-1,:] = eeg_data[1:,:].copy()
-                eeg_data[-1,:] = eeg_sample
-                n_samples += 1
-
-                if n_samples == output_hz*Fs:
-                    # Put classifier here to give output
-                    msg = model.predict(eeg_data)
-                    msg_encode = str.encode(str(msg))
-                    UDPClientSocket.sendto(msg_encode, addr)
-                    print(msg)
-                    n_samples = 0
-
-
-
-
-WINDOW_SIZE_MS = 8000
-SAMPLE_RATE_HZ = 250
-N_CH = 8
-trial_n = 1
-
-serverAddressPort   = ("127.0.0.1", 12345)
-bufferSize = 1024
-
-# Create a UDP socket at client side
-UDPClientSocket = socket.socket(family=socket.AF_INET, type=socket.SOCK_DGRAM)
-UDPClientSocket.bind(serverAddressPort)
-UDPClientSocket.setblocking(0)
-
-
-if __name__ == "__main__":
-    read_eeg_data(WINDOW_SIZE_MS, SAMPLE_RATE_HZ, N_CH, trial_n)
+                    if n_samples == output_hz*Fs:
+                        # Put classifier here to give output
+                        msg = model.predict(eeg_data)
+                        msg_encode = str.encode(str(msg))
+                        server_socket.sendto(msg_encode, addr)
+                        print(msg)
+                        n_samples = 0

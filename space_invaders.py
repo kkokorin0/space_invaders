@@ -1,16 +1,8 @@
 import pygame
 import time
 import random
-import socket
 
-
-localIP = "127.0.0.1"
-localPort = 12345
-bufferSize  = 1024
-
-# Create a datagram socket
-UDPClientSocket = socket.socket(family=socket.AF_INET, type=socket.SOCK_DGRAM)
-print("UDP client up")
+TRAIN_FLAG = 666
 
 
 class Game:
@@ -18,8 +10,11 @@ class Game:
     aliens = []
     rockets = []
     lost = False
+    width = 0
+    height = 0
 
-    def __init__(self, width, height):
+    def __init__(self, width, height, client_socket, local_ip, local_port,
+                 buffer_size, n_trials, trial_s):
         pygame.init()
         self.width = width
         self.height = height
@@ -29,35 +24,27 @@ class Game:
 
         generator = Generator(self)
         speed = 1
-        trial_s = 8
         rocket = None
         count = 0
 
-        directions = ["Left"]
-        if directions[0] == "Left":
-            hero = Hero(self, random.randint(width//1.5, width - 20), height - 20)
+        directions = ["LEFT", "RIGHT"] * n_trials
+        random.shuffle(directions)
+        print(directions)
+        if directions[0] == "LEFT":
+            hero = Hero(self, random.randint(width // 1.5, width - 20), height - 20)
         else:
-            hero = Hero(self, random.randint(20, width//2.5), height - 20)
+            hero = Hero(self, random.randint(20, width // 2.5), height - 20)
 
         # Start with blank
-        self.screen.fill((0, 0, 0))
-
         pygame.font.init()
         font = pygame.font.SysFont('Arial', 150)
-        textsurface = font.render("Waiting for 3 seconds", False, (255, 255, 255))
-        self.screen.blit(textsurface, (110, 160))
-
-        pygame.display.flip()
-        pygame.time.delay(3000)
-        self.screen.fill((0, 0, 0))
+        self.show_msg('READY', 2000)
 
         # Training
         for d_ind in range(len(directions)):
             aliens = []
             direction = directions[d_ind]
-            self.displayText(direction)
-            pygame.display.flip()
-            pygame.time.delay(1000)
+            self.show_msg(direction, 2000)  # let user know the direction
 
             print("Starting x: ", hero.x)
 
@@ -65,11 +52,11 @@ class Game:
             st = time.time()
 
             # Send start signal
-            bytesToSend = str.encode(str((d_ind+1)//2))
-            UDPClientSocket.sendto(bytesToSend, (localIP, localPort))
+            bytesToSend = str.encode(direction)
+            client_socket.sendto(bytesToSend, (local_ip, local_port))
 
             while not done:
-                if direction == "Left":  # sipka doleva
+                if direction == "LEFT":  # sipka doleva
                     if hero.x > 20:
                         hero.x -= speed
                 else:
@@ -88,7 +75,6 @@ class Game:
                 self.clock.tick(60)
                 self.screen.fill((0, 0, 0))
 
-
                 # get the end time
                 et = time.time()
                 # get the execution time
@@ -97,11 +83,11 @@ class Game:
                 if elapsed_time > trial_s:
                     print('Execution time:', elapsed_time, 'seconds')
                     try:
-                        if directions[d_ind+1] == "Left":
-                            hero.x = random.randint(width//1.5, width-20)
+                        if directions[d_ind + 1] == "LEFT":
+                            hero.x = random.randint(width // 1.5, width - 20)
                             print(hero.x)
                         else:
-                            hero.x = random.randint(20, width//2.5)
+                            hero.x = random.randint(20, width // 2.5)
                         generator = Generator(self)
                         pygame.display.flip()
                     except:
@@ -111,7 +97,7 @@ class Game:
                 for alien in self.aliens:
                     alien.draw()
                     alien.checkCollision(self)
-                    if (alien.y > height):
+                    if alien.y > height:
                         self.lost = True
                         self.displayText("YOU DIED")
                         pygame.time.delay(2000)
@@ -120,19 +106,23 @@ class Game:
                 for rocket in self.rockets:
                     rocket.draw()
 
-                if not self.lost: hero.draw()
+                if not self.lost:
+                    hero.draw()
+            self.show_msg('', 2000)  # blank screen after trial
 
-
-        bytesToSend = str.encode(str(666))
-        UDPClientSocket.sendto(bytesToSend, (localIP, localPort))
+        bytesToSend = str.encode(str(TRAIN_FLAG))
+        client_socket.sendto(bytesToSend, (local_ip, local_port))
 
         hero = Hero(self, width / 2, height - 20)
+
+        # Finished training
+        done = True
 
         # Play Game
         aliens = []
         while not done:
-            direction, addr = UDPClientSocket.recvfrom(bufferSize)
-            direction = int(direction.decode(encoding = 'UTF-8', errors = 'strict'))
+            direction, addr = client_socket.recvfrom(buffer_size)
+            direction = int(direction.decode(encoding='UTF-8', errors='strict'))
             print(direction)
 
             if len(self.aliens) == 0:
@@ -194,15 +184,24 @@ class Game:
                     for rocket in self.rockets:
                         rocket.draw()
 
-                    if not self.lost: hero.draw()
-
-
+                    if not self.lost:
+                        hero.draw()
 
     def displayText(self, text):
         pygame.font.init()
         font = pygame.font.SysFont('Arial', 150)
         textsurface = font.render(text, False, (255, 255, 255))
-        self.screen.blit(textsurface, (int(self.width/2)-120, 530))
+        self.screen.blit(textsurface, (int(self.width / 2) - 120, 530))
+
+    def show_msg(self, text, duration):
+        self.screen.fill((0, 0, 0))
+        self.displayText(text)
+        pygame.display.flip()
+        pygame.time.delay(500)
+        self.screen.fill((0, 0, 0))
+        self.displayText('')
+        pygame.display.flip()
+        pygame.time.delay(duration - 500)
 
 
 class Alien:
@@ -220,10 +219,8 @@ class Alien:
 
     def checkCollision(self, game):
         for rocket in game.rockets:
-            if (rocket.x < self.x + self.size and
-                    rocket.x > self.x - self.size and
-                    rocket.y < self.y + self.size and
-                    rocket.y > self.y - self.size):
+            if ((rocket.x < self.x + self.size) and (rocket.x > self.x - self.size) and
+                    (rocket.y < self.y + self.size) and (rocket.y > self.y - self.size)):
                 game.rockets.remove(rocket)
                 game.aliens.remove(self)
 
@@ -260,9 +257,5 @@ class Rocket:
     def draw(self):
         pygame.draw.rect(self.game.screen,  # renderovací plocha
                          (254, 52, 110),  # barva objektu
-                         pygame.Rect(self.x+35, self.y, 15, 50))
+                         pygame.Rect(self.x + 35, self.y, 15, 50))
         self.y -= 8  # poletí po herní ploše nahoru 2px/snímek
-
-
-if __name__ == '__main__':
-    game = Game(1393, 833)
