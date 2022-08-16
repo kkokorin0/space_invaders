@@ -1,4 +1,5 @@
-import serial, scipy
+import serial
+import scipy
 import numpy as np
 from pylsl import StreamInlet, resolve_stream
 import socket
@@ -11,7 +12,7 @@ def process_eeg_block(time_data, eeg_data, title, trial_n):
     return
 
 def read_eeg_data(window_size, Fs, Nch, trial_n):
-    first resolve an EEG stream on the lab network
+    # first resolve an EEG stream on the lab network
     print("looking for an EEG stream...")
     streams = resolve_stream('type', 'EEG')
     # create a new inlet to read from the stream
@@ -24,7 +25,7 @@ def read_eeg_data(window_size, Fs, Nch, trial_n):
     time_data = np.zeros(samples_per_window)
 
     eeg_sample, start_time = inlet.pull_sample()
-    eeg_data[0,:] = eeg_sample
+    eeg_data[0, :] = eeg_sample
     time_data[0] = start_time
     n_samples = 1
 
