@@ -17,7 +17,7 @@ def record_epoch(inlet, Ns, Nch, folder, msg, index):
     while n_samples < Ns:
         # get a new sample
         eeg_sample, timestamp = inlet.pull_sample()
-        eeg_data[n_samples, :] = eeg_sample
+        eeg_data[n_samples, :] = eeg_sample[0:Nch]
         time_data[n_samples] = timestamp
         n_samples += 1
 
@@ -25,19 +25,37 @@ def record_epoch(inlet, Ns, Nch, folder, msg, index):
     np.savetxt(fname, eeg_data, delimiter=",")
 
 
-def build_classifier(folder, Fs, Nch, n_trials, mi_start, mi_stop, mi_len,
-                     bp_order=10, stopband_db=40):
-    # bp_sos_mu = signal.cheby2(N=bp_order, rs=stopband_db, Wn=[2, 13],
-    #                           btype='bandpass', analog=False, output='sos', fs=Fs)
-    bp_sos_beta = signal.cheby2(N=bp_order, rs=stopband_db, Wn=[2, 20],
+def create_mi_filters(Fs, mu_pass_band, beta_pass_band, order, stopband_db):
+    bp_sos_mu = signal.cheby2(N=order, rs=stopband_db, Wn=mu_pass_band,
+                              btype='bandpass', analog=False, output='sos', fs=Fs)
+    bp_sos_beta = signal.cheby2(N=order, rs=stopband_db, Wn=beta_pass_band,
                                 btype='bandpass', analog=False, output='sos', fs=Fs)
-    Nfilt = 1
+    return [bp_sos_mu, bp_sos_beta]
 
+
+def process_eeg_block(raw_data, filter_params):
+    # common average reference
+    rref_data = raw_data.transpose() - np.mean(raw_data, axis=1)
+
+    # bandpass
+    filter_sets = []
+    for filter_sos in filter_params:
+        filter_sets.append(signal.sosfilt(filter_sos, rref_data.transpose(), axis=0))
+
+    return np.concatenate(filter_sets, axis=1)
+
+
+def log_var_feature(eeg_data):
+    var = np.var(eeg_data, axis=0)
+    return np.log(var / sum(var))
+
+
+def build_classifier(folder, Nch, n_trials, mi_start, mi_stop, mi_len, filter_params):
     # total trials after subdivision
     n_slices = (mi_stop - mi_start) // mi_len
     n_split_trials = n_trials*n_slices
     y = np.array([0]*n_split_trials + [1]*n_split_trials)  # 0 left, 1 right
-    X = np.zeros((n_split_trials*2, Nch*Nfilt))
+    X = np.zeros((n_split_trials*2, Nch*len(filter_params)))
     split_i = 0
 
     print('Feature extraction')
@@ -47,14 +65,8 @@ def build_classifier(folder, Fs, Nch, n_trials, mi_start, mi_stop, mi_len,
             fname = '%s//%s_%d.csv' % (folder, direction, trial_i)
             raw_data = pd.read_csv(fname, header=None).to_numpy()
 
-            # common average reference
-            rref_data = raw_data.transpose() - np.mean(raw_data, axis=1)
-
-            # bandpass
-            # filtered_mu = signal.sosfilt(bp_sos_mu, rref_data.transpose(), axis=0)
-            filtered_beta = signal.sosfilt(bp_sos_beta, rref_data.transpose(), axis=0)
-            # filtered_data = np.concatenate((filtered_mu, filtered_beta), axis=1)
-            filtered_data = filtered_beta
+            # rref and bp
+            filtered_data = process_eeg_block(raw_data, filter_params)
 
             # subdivide each trial
             imagery_data = filtered_data[mi_start:mi_stop, :]
@@ -62,20 +74,18 @@ def build_classifier(folder, Fs, Nch, n_trials, mi_start, mi_stop, mi_len,
 
             # extract log-variance features
             for slice_i in range(0, n_slices):
-                eeg_slice = split_data[slice_i, :, :]
-                var = np.var(eeg_slice, axis=0)
-                X[split_i, :] = np.log(var/sum(var))
+                X[split_i, :] = log_var_feature(split_data[slice_i, :, :])
                 split_i += 1
 
-    print('Building classifier')
-
     # LDA classifier
+    print('Fitting classifier')
     model = LinearDiscriminantAnalysis(shrinkage='auto', solver='lsqr')
     model.fit(X, y)
 
     # cross validation
     cv = RepeatedStratifiedKFold(n_splits=10, n_repeats=3, random_state=1)
     scores = cross_val_score(model, X, y, scoring='accuracy', cv=cv, n_jobs=-1)
+    print('Accuracies:', scores)
     print('Cross validation mean=%.2f var=%.2f' % (np.mean(scores), np.var(scores)))
 
     model_file = '%s//clf.sav' % folder
@@ -117,30 +127,38 @@ def get_training_data(window_size_ms, Fs, Nch, n_trials, server_socket, buffer_s
     print('Completed %d left and %d right trials' % (left_i, right_i))
 
 
-def process_online_data():
-    # msg = 1
+def process_online_data(Ns, Nch, filter_params, model, server_socket, local_ip,
+                        local_port):
+    # first resolve an EEG stream on the lab network
+    print('looking for an EEG stream...')
+    streams = resolve_stream('type', 'EEG')
+    print('EEG stream found')
+
+    # create a new inlet to read from the stream
+    inlet = StreamInlet(streams[0])
+
     n_samples = 0
-    # while True:
-    #     # get a new sample
-    #     eeg_sample, timestamp = inlet.pull_sample()
-    #
-    #     #store samples
-    #     eeg_data[n_samples,:] = eeg_sample
-    #     n_samples += 1
-    #
-    #     if n_samples >= slide_win:
-    #         n_samples = 0
-    #         while True:
-    #             # get a new sample
-    #             eeg_sample, timestamp = inlet.pull_sample()
-    #             eeg_data[:-1,:] = eeg_data[1:,:].copy()
-    #             eeg_data[-1,:] = eeg_sample
-    #             n_samples += 1
-    #
-    #             if n_samples == output_hz*Fs:
-    #                 # Put classifier here to give output
-    #                 msg = model.predict(eeg_data)
-    #                 msg_encode = str.encode(str(msg))
-    #                 server_socket.sendto(msg_encode, addr)
-    #                 print(msg)
-    #                 n_samples = 0
+    eeg_data = np.zeros((Ns, Nch))
+    while True:
+        if n_samples < Ns:
+            # get a new sample
+            eeg_sample, timestamp = inlet.pull_sample()
+            eeg_data[n_samples, :] = eeg_sample[0:Nch]
+            n_samples += 1
+        else:
+            # process block need to use 5s of data like training
+            print('Raw:', eeg_data)
+            filtered_data = process_eeg_block(eeg_data, filter_params)
+            print('Filtered:', filtered_data)
+
+            # print(filtered_data)
+            X = log_var_feature(filtered_data)
+
+            # send msg to game
+            msg = model.predict(X.reshape(1, -1))
+            msg_encode = str.encode(str(msg[0]))
+            server_socket.sendto(msg_encode, (local_ip, local_port))
+
+            # reset vars
+            n_samples = 0
+            eeg_data = np.zeros((Ns, Nch))

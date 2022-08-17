@@ -2,27 +2,32 @@ import socket
 import threading
 import time
 import pickle
-from mi_stream import get_training_data, build_classifier, process_online_data
+from mi_stream import get_training_data, build_classifier, process_online_data, create_mi_filters
 from space_invaders import Game
 
 BUFFER_SIZE = 1024
 LOCAL_PORT = 12345
 LOCAL_IP = "127.0.0.1"
-DATA_FOLDER = r'C:\Users\kkokorin\Documents\GitHub\space_invaders\test_data'
+DATA_FOLDER = r'C:\Users\kkokorin\Documents\GitHub\space_invaders\tim_1'
 
-GAME_W = 1393
-GAME_H = 833
+GAME_W = 1280
+GAME_H = 720
 
-N_TRIALS = 5
+N_TRIALS = 20
 TRIAL_LEN_MS = 5500
 MI_START_MS = 1000
-MI_STOP_MS = 3000
+MI_STOP_MS = 5000
 MI_DURATION_MS = 1000
 
 SAMPLE_RATE_HZ = 250
-N_CH = 8
+N_CH = 7
 
-RUN_TYPE = 1  # 1 for train, 2 for classify, 3 for test
+MU_BAND = [7.5, 12.5]
+BETA_BAND = [12.5, 30]
+FILTER_ORDER = 10
+STOPBAND_DB = 40
+
+RUN_TYPE = 3  # 1 for train, 2 for classify, 3 for test
 
 
 class MyThread(threading.Thread):
@@ -49,12 +54,20 @@ class EEGTrainingThread(MyThread):
 class EEGOnlineThread(MyThread):
     def run(self):
         print("Starting " + self.name)
+        print('Loading model')
+        model_file = '%s//clf.sav' % DATA_FOLDER
+        loaded_model = pickle.load(open(model_file, 'rb'))
+
         # setup data streaming server
         eeg_server_socket = socket.socket(family=socket.AF_INET, type=socket.SOCK_DGRAM)
-        eeg_server_socket.bind((LOCAL_IP, LOCAL_PORT))
-        eeg_server_socket.setblocking(0)
+        # eeg_server_socket.bind((LOCAL_IP, LOCAL_PORT))
+        # eeg_server_socket.setblocking(0)
 
-        process_online_data()
+        filter_params = create_mi_filters(SAMPLE_RATE_HZ, MU_BAND, BETA_BAND,
+                                          FILTER_ORDER, STOPBAND_DB)
+
+        process_online_data(MI_DURATION_MS*SAMPLE_RATE_HZ//1000, N_CH, filter_params,
+                            loaded_model, eeg_server_socket, LOCAL_IP, LOCAL_PORT)
         print("Exiting " + self.name)
 
 
@@ -74,8 +87,9 @@ class GamePlayThread(MyThread):
         print("Starting " + self.name)
         # setup data streaming server
         game_client_socket = socket.socket(family=socket.AF_INET, type=socket.SOCK_DGRAM)
+        game_client_socket.bind((LOCAL_IP, LOCAL_PORT))
         space_invaders = Game(GAME_W, GAME_H)
-        space_invaders.run_online()
+        space_invaders.run_online(game_client_socket, BUFFER_SIZE)
         print("Exiting " + self.name)
 
 
@@ -98,15 +112,12 @@ if __name__ == "__main__":
 
     elif RUN_TYPE == 2:
         print('Building classifier')
-        build_classifier(DATA_FOLDER, SAMPLE_RATE_HZ, N_CH, N_TRIALS,
-                         MI_START_MS//1000*SAMPLE_RATE_HZ, MI_STOP_MS//1000*SAMPLE_RATE_HZ,
-                         MI_DURATION_MS//1000*SAMPLE_RATE_HZ)
+        filter_params = create_mi_filters(SAMPLE_RATE_HZ, MU_BAND, BETA_BAND,
+                                          FILTER_ORDER, STOPBAND_DB)
+        build_classifier(DATA_FOLDER, N_CH, N_TRIALS, MI_START_MS//1000*SAMPLE_RATE_HZ,
+                         MI_STOP_MS//1000*SAMPLE_RATE_HZ, MI_DURATION_MS//1000*SAMPLE_RATE_HZ,
+                         filter_params)
     elif RUN_TYPE == 3:
-        # to do
-        print('Loading model')
-        model_file = '%s//clf.sav' % DATA_FOLDER
-        loaded_model = pickle.load(open(model_file, 'rb'))
-
         print('Running test')
         # setup eeg stream
         eeg_thread = EEGOnlineThread(1, "online EEG thread", 1)

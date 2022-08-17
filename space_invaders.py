@@ -108,7 +108,7 @@ class Game:
                     hero.draw()
             self.show_msg('', 2000)  # blank screen after trial
 
-    def run_online(self, client_socket, buffer_size, ):
+    def run_online(self, client_socket, buffer_size):
         # Play Game
         count = 0
         hero = Hero(self, self.width / 2, self.height - 20)
@@ -121,7 +121,7 @@ class Game:
             if len(self.aliens) == 0:
                 self.display_text("VICTORY ACHIEVED")
 
-            if direction == 1:
+            if direction == 0:
                 st = time.time()
                 while time.time() - st < 1:
                     hero.x -= self.speed if hero.x > 20 else 0
@@ -148,9 +148,10 @@ class Game:
                     for rocket in self.rockets:
                         rocket.draw()
 
-                    if not self.lost: hero.draw()
+                    if not self.lost:
+                        hero.draw()
 
-            elif direction == -1:
+            elif direction == 1:
                 st = time.time()
                 while time.time() - st < 1:
                     hero.x += self.speed if hero.x < self.width - 20 else 0
