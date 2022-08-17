@@ -36,13 +36,14 @@ def create_mi_filters(Fs, mu_pass_band, beta_pass_band, order, stopband_db):
 def process_eeg_block(raw_data, filter_params):
     # common average reference
     rref_data = raw_data.transpose() - np.mean(raw_data, axis=1)
+    return rref_data.transpose()
 
-    # bandpass
-    filter_sets = []
-    for filter_sos in filter_params:
-        filter_sets.append(signal.sosfilt(filter_sos, rref_data.transpose(), axis=0))
-
-    return np.concatenate(filter_sets, axis=1)
+    # # bandpass
+    # filter_sets = []
+    # for filter_sos in filter_params:
+    #     filter_sets.append(signal.sosfilt(filter_sos, rref_data.transpose(), axis=0))
+    #
+    # return np.concatenate(filter_sets, axis=1)
 
 
 def log_var_feature(eeg_data):
@@ -55,7 +56,7 @@ def build_classifier(folder, Nch, n_trials, mi_start, mi_stop, mi_len, filter_pa
     n_slices = (mi_stop - mi_start) // mi_len
     n_split_trials = n_trials*n_slices
     y = np.array([0]*n_split_trials + [1]*n_split_trials)  # 0 left, 1 right
-    X = np.zeros((n_split_trials*2, Nch*len(filter_params)))
+    X = np.zeros((n_split_trials*2, Nch))
     split_i = 0
 
     print('Feature extraction')
@@ -147,9 +148,9 @@ def process_online_data(Ns, Nch, filter_params, model, server_socket, local_ip,
             n_samples += 1
         else:
             # process block need to use 5s of data like training
-            print('Raw:', eeg_data)
+            # print('Raw:', eeg_data)
             filtered_data = process_eeg_block(eeg_data, filter_params)
-            print('Filtered:', filtered_data)
+            # print('Filtered:', filtered_data)
 
             # print(filtered_data)
             X = log_var_feature(filtered_data)

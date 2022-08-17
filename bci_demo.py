@@ -8,15 +8,15 @@ from space_invaders import Game
 BUFFER_SIZE = 1024
 LOCAL_PORT = 12345
 LOCAL_IP = "127.0.0.1"
-DATA_FOLDER = r'C:\Users\kkokorin\Documents\GitHub\space_invaders\tim_1'
+DATA_FOLDER = r'C:\Users\kkokorin\Documents\GitHub\space_invaders\po_1'
 
 GAME_W = 1280
 GAME_H = 720
 
-N_TRIALS = 20
-TRIAL_LEN_MS = 5500
+N_TRIALS = 8
+TRIAL_LEN_MS = 10000
 MI_START_MS = 1000
-MI_STOP_MS = 5000
+MI_STOP_MS = 10000
 MI_DURATION_MS = 1000
 
 SAMPLE_RATE_HZ = 250
@@ -27,7 +27,7 @@ BETA_BAND = [12.5, 30]
 FILTER_ORDER = 10
 STOPBAND_DB = 40
 
-RUN_TYPE = 3  # 1 for train, 2 for classify, 3 for test
+RUN_TYPE = 3 # for train, 2 for classify, 3 for test
 
 
 class MyThread(threading.Thread):
