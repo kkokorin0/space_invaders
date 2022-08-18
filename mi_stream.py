@@ -4,9 +4,9 @@ import pandas as pd
 import pickle
 from pylsl import StreamInlet, resolve_stream
 from scipy import signal
-from sklearn.model_selection import RepeatedStratifiedKFold
-from sklearn.model_selection import cross_val_score
+from sklearn.model_selection import RepeatedStratifiedKFold, cross_val_score, GridSearchCV
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
+from sklearn import svm
 
 
 def record_epoch(inlet, Ns, Nch, folder, msg, index):
@@ -51,12 +51,25 @@ def log_var_feature(eeg_data):
     return np.log(var / sum(var))
 
 
-def build_classifier(folder, Nch, n_trials, mi_start, mi_stop, mi_len, filter_params):
+def psd_feature(eeg_data, Fs, Fmin, Fmax):
+    Ns, Nch = eeg_data.shape
+    psd_list = []
+    for ch_i in range(0, Nch):
+        channel_eeg = np.squeeze(eeg_data[:, ch_i])
+        # freqs, psd = signal.periodogram(channel_eeg, fs=Fs)
+        freqs, psd = signal.welch(channel_eeg, fs=Fs, nperseg=Fs)
+        psd_list.append(psd[Fmin:Fmax+1])
+
+    return np.array(psd_list).flatten()
+
+
+def build_classifier(folder, Nch, n_trials, mi_start, mi_stop, mi_len, filter_params, psd_params):
     # total trials after subdivision
     n_slices = (mi_stop - mi_start) // mi_len
     n_split_trials = n_trials*n_slices
     y = np.array([0]*n_split_trials + [1]*n_split_trials)  # 0 left, 1 right
-    X = np.zeros((n_split_trials*2, Nch))
+    # X = np.zeros((n_split_trials*2, Nch))
+    X = []
     split_i = 0
 
     print('Feature extraction')
@@ -75,19 +88,32 @@ def build_classifier(folder, Nch, n_trials, mi_start, mi_stop, mi_len, filter_pa
 
             # extract log-variance features
             for slice_i in range(0, n_slices):
-                X[split_i, :] = log_var_feature(split_data[slice_i, :, :])
+                slice_data = split_data[slice_i, :, :]
+                # X[split_i, :] = log_var_feature(slice_data)
+                X.append(psd_feature(slice_data, psd_params[0], psd_params[1], psd_params[2]))
+
                 split_i += 1
+
+    X = np.array(X)
 
     # LDA classifier
     print('Fitting classifier')
     model = LinearDiscriminantAnalysis(shrinkage='auto', solver='lsqr')
-    model.fit(X, y)
 
     # cross validation
     cv = RepeatedStratifiedKFold(n_splits=10, n_repeats=3, random_state=1)
     scores = cross_val_score(model, X, y, scoring='accuracy', cv=cv, n_jobs=-1)
     print('Accuracies:', scores)
     print('Cross validation mean=%.2f var=%.2f' % (np.mean(scores), np.var(scores)))
+    
+    model.fit(X, y)
+
+    # # SVM classifier
+    # svm_params = {'kernel': ('linear', 'rbf'), 'C': [0.01, 0.1, 1, 10, 100], 'gamma': [0.01, 0.1, 1, 10, 100]}
+    # svc = svm.SVC()
+    # model = GridSearchCV(svc, svm_params, cv=10, refit=True)
+    # model.fit(X, y)
+    # print(model.cv_results_['mean_test_score'])
 
     model_file = '%s//clf.sav' % folder
     pickle.dump(model, open(model_file, 'wb'))

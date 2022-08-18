@@ -8,15 +8,15 @@ from space_invaders import Game
 BUFFER_SIZE = 1024
 LOCAL_PORT = 12345
 LOCAL_IP = "127.0.0.1"
-DATA_FOLDER = r'C:\Users\kkokorin\Documents\GitHub\space_invaders\po_1'
+DATA_FOLDER = r'C:\Users\kkokorin\Documents\GitHub\space_invaders\kk_2'
 
 GAME_W = 1280
 GAME_H = 720
 
 N_TRIALS = 8
-TRIAL_LEN_MS = 10000
-MI_START_MS = 1000
-MI_STOP_MS = 10000
+TRIAL_LEN_MS = 5500
+MI_START_MS = 500
+MI_STOP_MS = 5000
 MI_DURATION_MS = 1000
 
 SAMPLE_RATE_HZ = 250
@@ -27,7 +27,9 @@ BETA_BAND = [12.5, 30]
 FILTER_ORDER = 10
 STOPBAND_DB = 40
 
-RUN_TYPE = 3 # for train, 2 for classify, 3 for test
+PSD_WINDOW = [8, 30]
+
+RUN_TYPE = 2 # for train, 2 for classify, 3 for test
 
 
 class MyThread(threading.Thread):
@@ -114,9 +116,10 @@ if __name__ == "__main__":
         print('Building classifier')
         filter_params = create_mi_filters(SAMPLE_RATE_HZ, MU_BAND, BETA_BAND,
                                           FILTER_ORDER, STOPBAND_DB)
+        psd_params = [SAMPLE_RATE_HZ] + PSD_WINDOW
         build_classifier(DATA_FOLDER, N_CH, N_TRIALS, MI_START_MS//1000*SAMPLE_RATE_HZ,
                          MI_STOP_MS//1000*SAMPLE_RATE_HZ, MI_DURATION_MS//1000*SAMPLE_RATE_HZ,
-                         filter_params)
+                         filter_params, psd_params)
     elif RUN_TYPE == 3:
         print('Running test')
         # setup eeg stream
