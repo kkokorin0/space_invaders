@@ -8,12 +8,12 @@ from space_invaders import Game
 BUFFER_SIZE = 1024
 LOCAL_PORT = 12345
 LOCAL_IP = "127.0.0.1"
-DATA_FOLDER = r'C:\Users\kkokorin\Documents\GitHub\space_invaders\kk_2'
+DATA_FOLDER = r'C:\Users\kkokorin\Documents\GitHub\space_invaders\kk_3'
 
 GAME_W = 1280
 GAME_H = 720
 
-N_TRIALS = 8
+N_TRIALS = 20
 TRIAL_LEN_MS = 5500
 MI_START_MS = 500
 MI_STOP_MS = 5000
@@ -29,7 +29,7 @@ STOPBAND_DB = 40
 
 PSD_WINDOW = [8, 30]
 
-RUN_TYPE = 2 # for train, 2 for classify, 3 for test
+RUN_TYPE = 2# for train, 2 for classify, 3 for test
 
 
 class MyThread(threading.Thread):
@@ -67,8 +67,8 @@ class EEGOnlineThread(MyThread):
 
         filter_params = create_mi_filters(SAMPLE_RATE_HZ, MU_BAND, BETA_BAND,
                                           FILTER_ORDER, STOPBAND_DB)
-
-        process_online_data(MI_DURATION_MS*SAMPLE_RATE_HZ//1000, N_CH, filter_params,
+        psd_params = [SAMPLE_RATE_HZ] + PSD_WINDOW
+        process_online_data(MI_DURATION_MS*SAMPLE_RATE_HZ//1000, N_CH, filter_params, psd_params,
                             loaded_model, eeg_server_socket, LOCAL_IP, LOCAL_PORT)
         print("Exiting " + self.name)
 

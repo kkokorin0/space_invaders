@@ -9,6 +9,7 @@ from sklearn.discriminant_analysis import LinearDiscriminantAnalysis as LDA
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import make_pipeline
 from sklearn import svm
+from statistics import mode
 
 
 def record_epoch(inlet, Ns, Nch, folder, msg, index):
@@ -100,8 +101,8 @@ def build_classifier(folder, Nch, n_trials, mi_start, mi_stop, mi_len, filter_pa
 
     # LDA classifier
     print('Fitting classifier')
-    # model = LDA(shrinkage='auto', solver='lsqr')
-    model = make_pipeline(StandardScaler(), LDA(shrinkage='auto', solver='lsqr'))
+    model = LDA(shrinkage='auto', solver='lsqr')
+    # model = make_pipeline(StandardScaler(), LDA(shrinkage='auto', solver='lsqr'))
 
     # cross validation
     cv = RepeatedStratifiedKFold(n_splits=10, n_repeats=3, random_state=1)
@@ -155,8 +156,8 @@ def get_training_data(window_size_ms, Fs, Nch, n_trials, server_socket, buffer_s
     print('Completed %d left and %d right trials' % (left_i, right_i))
 
 
-def process_online_data(Ns, Nch, filter_params, model, server_socket, local_ip,
-                        local_port):
+def process_online_data(Ns, Nch, filter_params, psd_params, model,
+                        server_socket, local_ip, local_port):
     # first resolve an EEG stream on the lab network
     print('looking for an EEG stream...')
     streams = resolve_stream('type', 'EEG')
@@ -167,6 +168,7 @@ def process_online_data(Ns, Nch, filter_params, model, server_socket, local_ip,
 
     n_samples = 0
     eeg_data = np.zeros((Ns, Nch))
+    cmd_list = []
     while True:
         if n_samples < Ns:
             # get a new sample
@@ -180,11 +182,21 @@ def process_online_data(Ns, Nch, filter_params, model, server_socket, local_ip,
             # print('Filtered:', filtered_data)
 
             # print(filtered_data)
-            X = log_var_feature(filtered_data)
+            # X = log_var_feature(filtered_data)
+            X = psd_feature(filtered_data, psd_params[0],
+                            psd_params[1], psd_params[2])
+
 
             # send msg to game
-            msg = model.predict(X.reshape(1, -1))
-            msg_encode = str.encode(str(msg[0]))
+            cmd = model.predict(X.reshape(1, -1))[0]
+            if len(cmd_list) < 3:
+                msg = cmd
+            else:
+                cmd_list.append(cmd)
+                cmd_list = cmd_list[1:]
+                msg = mode(cmd_list)
+
+            msg_encode = str.encode(str(msg))
             server_socket.sendto(msg_encode, (local_ip, local_port))
 
             # reset vars
