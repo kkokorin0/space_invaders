@@ -5,7 +5,9 @@ import pickle
 from pylsl import StreamInlet, resolve_stream
 from scipy import signal
 from sklearn.model_selection import RepeatedStratifiedKFold, cross_val_score, GridSearchCV
-from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
+from sklearn.discriminant_analysis import LinearDiscriminantAnalysis as LDA
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import make_pipeline
 from sklearn import svm
 
 
@@ -98,23 +100,22 @@ def build_classifier(folder, Nch, n_trials, mi_start, mi_stop, mi_len, filter_pa
 
     # LDA classifier
     print('Fitting classifier')
-    model = LinearDiscriminantAnalysis(shrinkage='auto', solver='lsqr')
+    # model = LDA(shrinkage='auto', solver='lsqr')
+    model = make_pipeline(StandardScaler(), LDA(shrinkage='auto', solver='lsqr'))
 
     # cross validation
     cv = RepeatedStratifiedKFold(n_splits=10, n_repeats=3, random_state=1)
     scores = cross_val_score(model, X, y, scoring='accuracy', cv=cv, n_jobs=-1)
     print('Accuracies:', scores)
     print('Cross validation mean=%.2f var=%.2f' % (np.mean(scores), np.var(scores)))
-    
-    model.fit(X, y)
 
     # # SVM classifier
     # svm_params = {'kernel': ('linear', 'rbf'), 'C': [0.01, 0.1, 1, 10, 100], 'gamma': [0.01, 0.1, 1, 10, 100]}
     # svc = svm.SVC()
     # model = GridSearchCV(svc, svm_params, cv=10, refit=True)
-    # model.fit(X, y)
     # print(model.cv_results_['mean_test_score'])
 
+    model.fit(X, y)
     model_file = '%s//clf.sav' % folder
     pickle.dump(model, open(model_file, 'wb'))
 
