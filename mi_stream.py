@@ -17,6 +17,7 @@ def record_epoch(inlet, Ns, Nch, folder, msg, index):
     time_data = np.zeros(Ns)
     n_samples = 0
 
+    inlet.flush()
     while n_samples < Ns:
         # get a new sample
         eeg_sample, timestamp = inlet.pull_sample()
@@ -38,8 +39,12 @@ def create_mi_filters(Fs, mu_pass_band, beta_pass_band, order, stopband_db):
 
 def process_eeg_block(raw_data, filter_params):
     # common average reference
-    rref_data = raw_data.transpose() - np.mean(raw_data, axis=1)
+    # rref_data = raw_data.transpose() - np.mean(raw_data, axis=1)
+
+    # Cz ref
+    rref_data = raw_data.transpose() - raw_data[:, 2]
     return rref_data.transpose()
+    # return raw_data
 
     # # bandpass
     # filter_sets = []
@@ -77,6 +82,8 @@ def build_classifier(folder, Nch, n_trials, mi_start, mi_stop, mi_len, filter_pa
 
     print('Feature extraction')
     for direction in ['LEFT', 'RIGHT']:
+        print(direction)
+        psd_list = []
         for trial_i in range(1, n_trials+1):
             # read data from csv
             fname = '%s//%s_%d.csv' % (folder, direction, trial_i)
@@ -90,31 +97,34 @@ def build_classifier(folder, Nch, n_trials, mi_start, mi_stop, mi_len, filter_pa
             split_data = np.reshape(imagery_data, (n_slices, mi_len, -1))
 
             # extract log-variance features
-            for slice_i in range(0, n_slices):
+            for slice_i in range(n_slices):
                 slice_data = split_data[slice_i, :, :]
-                # X[split_i, :] = log_var_feature(slice_data)
-                X.append(psd_feature(slice_data, psd_params[0], psd_params[1], psd_params[2]))
+                # feature_vector = log_var_feature(slice_data)
+                feature_vector = (psd_feature(slice_data, psd_params[0], psd_params[1], psd_params[2]))
+                X.append(feature_vector)
+                # psd_list.append(feature_vector)
+                # print(feature_vector)
 
                 split_i += 1
-
+        # print(np.mean(np.array(psd_list), axis=1))
     X = np.array(X)
 
     # LDA classifier
     print('Fitting classifier')
-    model = LDA(shrinkage='auto', solver='lsqr')
-    # model = make_pipeline(StandardScaler(), LDA(shrinkage='auto', solver='lsqr'))
+    # model = LDA(shrinkage='auto', solver='lsqr')
+    model = make_pipeline(StandardScaler(), LDA(shrinkage='auto', solver='lsqr'))
+
+    # SVM classifier
+    # svm_params = {'kernel': ('linear', 'rbf'), 'C': [0.01, 0.1, 1, 10, 100], 'gamma': [0.01, 0.1, 1, 10, 100]}
+    # model = svm.SVC(kernel='rbf')
+    # model = GridSearchCV(svc, svm_params, cv=10, refit=True)
+    # print(model)
 
     # cross validation
-    cv = RepeatedStratifiedKFold(n_splits=10, n_repeats=3, random_state=1)
+    cv = RepeatedStratifiedKFold(n_splits=5, n_repeats=3, random_state=1)
     scores = cross_val_score(model, X, y, scoring='accuracy', cv=cv, n_jobs=-1)
     print('Accuracies:', scores)
-    print('Cross validation mean=%.2f var=%.2f' % (np.mean(scores), np.var(scores)))
-
-    # # SVM classifier
-    # svm_params = {'kernel': ('linear', 'rbf'), 'C': [0.01, 0.1, 1, 10, 100], 'gamma': [0.01, 0.1, 1, 10, 100]}
-    # svc = svm.SVC()
-    # model = GridSearchCV(svc, svm_params, cv=10, refit=True)
-    # print(model.cv_results_['mean_test_score'])
+    print('Cross validation mean=%.2f var=%.3f' % (np.mean(scores), np.var(scores)))
 
     model.fit(X, y)
     model_file = '%s//clf.sav' % folder
@@ -137,6 +147,9 @@ def get_training_data(window_size_ms, Fs, Nch, n_trials, server_socket, buffer_s
     left_i = 0
     right_i = 0
     while (left_i < n_trials) or (right_i < n_trials):
+        # get a new sample to maintain synchrony?
+        eeg_sample, timestamp = inlet.pull_sample()
+
         # keep running the non-blocking udp and make sure you run the eeg
         try:
             msgFromServer, addr = server_socket.recvfrom(buffer_size)

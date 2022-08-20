@@ -8,19 +8,19 @@ from space_invaders import Game
 BUFFER_SIZE = 1024
 LOCAL_PORT = 12345
 LOCAL_IP = "127.0.0.1"
-DATA_FOLDER = r'C:\Users\kkokorin\Documents\GitHub\space_invaders\kk_3'
+DATA_FOLDER = r'MI_trials\kk_2'
 
 GAME_W = 1280
 GAME_H = 720
 
 N_TRIALS = 20
 TRIAL_LEN_MS = 5500
-MI_START_MS = 500
+MI_START_MS = 1000
 MI_STOP_MS = 5000
 MI_DURATION_MS = 1000
 
 SAMPLE_RATE_HZ = 250
-N_CH = 7
+N_CH = 3
 
 MU_BAND = [7.5, 12.5]
 BETA_BAND = [12.5, 30]
@@ -29,7 +29,7 @@ STOPBAND_DB = 40
 
 PSD_WINDOW = [8, 30]
 
-RUN_TYPE = 2# for train, 2 for classify, 3 for test
+RUN_TYPE = 2 # for train, 2 for classify, 3 for test
 
 
 class MyThread(threading.Thread):
@@ -100,7 +100,6 @@ if __name__ == "__main__":
     # cd OpenBCI_LSL
     # python openbci_lsl.py COM6 --stream
     # /start /stop /exit
-
     if RUN_TYPE == 1:
         print('Getting training data')
         # setup eeg stream

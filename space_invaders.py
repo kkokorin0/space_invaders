@@ -15,7 +15,8 @@ class Game:
         pygame.init()
         self.width = width
         self.height = height
-        self.screen = pygame.display.set_mode((width, height), display=0)
+        self.screen = pygame.display.set_mode((width, height), pygame.FULLSCREEN, display=1)
+        # self.screen = pygame.display.set_mode((width, height), display=0)
         self.clock = pygame.time.Clock()
         self.generator = Generator(self)
         self.speed = 1
@@ -54,6 +55,7 @@ class Game:
             client_socket.sendto(bytesToSend, (local_ip, local_port))
 
             while not done:
+                aliens = []
                 if direction == "LEFT":  # sipka doleva
                     if hero.x > 20:
                         hero.x -= self.speed
@@ -86,6 +88,7 @@ class Game:
                             print(hero.x)
                         else:
                             hero.x = random.randint(20, self.width // 2.5)
+                        self.aliens = []
                         Generator(self)
                         pygame.display.flip()
                     except:
@@ -195,7 +198,7 @@ class Game:
         self.screen.fill((0, 0, 0))
         self.display_text('')
         pygame.display.flip()
-        pygame.time.delay(duration - 500)
+        pygame.time.delay(duration)
 
 
 class Alien:
