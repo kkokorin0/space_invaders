@@ -163,6 +163,8 @@ def get_training_data(window_size_ms, Fs, Nch, n_trials, server_socket, buffer_s
                 record_epoch(inlet, Ns, Nch, folder, msg, right_i)
                 right_i += 1
 
+            print('Completed %d,%d of %d' % (left_i, right_i, n_trials))
+
         # non-blocking socket will return error if no msg
         except socket.error:
             pass
