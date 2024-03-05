@@ -1,42 +1,60 @@
-import pygame
-import time
 import random
+import time
+
+import pygame
 
 
 class Game:
-    screen = None
-    aliens = []
-    rockets = []
-    lost = False
-    width = 0
-    height = 0
+    """Game class for Space Invaders game"""
+
+    speed = 1
 
     def __init__(self, width, height):
+        """Setup game screen
+
+        Args:
+            width (int): screen width
+            height (int): screen height
+        """
         pygame.init()
         self.width = width
         self.height = height
-        self.screen = pygame.display.set_mode((width, height), pygame.FULLSCREEN, display=1)
-        # self.screen = pygame.display.set_mode((width, height), display=0)
+        self.screen = pygame.display.set_mode(
+            (width, height), pygame.FULLSCREEN, display=1
+        )
         self.clock = pygame.time.Clock()
         self.generator = Generator(self)
-        self.speed = 1
         self.rocket = None
+        self.aliens = []
+        self.rockets = []
+        self.lost = False
 
-    def run_training(self, client_socket, local_ip, local_port, n_trials,
-                     trial_s):
+    def run_training(self, client_socket, local_ip, local_port, n_trials, trial_s):
+        """Record training data while the ship moves left or right
+
+        Args:
+            client_socket (socket): game client
+            local_ip (str): IP address
+            local_port (int): port
+            n_trials (int): number of trials
+            trial_s (float): trial duration (s)
+        """
         directions = ["LEFT", "RIGHT"] * n_trials
         random.shuffle(directions)
         print(directions)
         if directions[0] == "LEFT":
-            hero = Hero(self, random.randint(self.width // 1.5, self.width - 20),
-                        self.height - 20)
+            hero = Hero(
+                self,
+                random.randint(self.width // 1.5, self.width - 20),
+                self.height - 20,
+            )
         else:
             hero = Hero(self, random.randint(20, self.width // 2.5), self.height - 20)
 
         # Start with blank
         pygame.font.init()
-        pygame.font.SysFont('Arial', 150)
-        self.show_msg('READY', 2000)
+        pygame.font.SysFont("Arial", 150)
+        self.show_msg("READY", 2000)
 
         # Training
         count = 0
@@ -55,7 +73,7 @@ class Game:
             client_socket.sendto(bytesToSend, (local_ip, local_port))
 
             while not done:
-                aliens = []
+                self.aliens = []
                 if direction == "LEFT":  # sipka doleva
                     if hero.x > 20:
                         hero.x -= self.speed
@@ -81,7 +99,7 @@ class Game:
                 elapsed_time = et - st
 
                 if elapsed_time > trial_s:
-                    print('Execution time:', elapsed_time, 'seconds')
+                    print("Execution time:", elapsed_time, "seconds")
                     try:
                         if directions[d_ind + 1] == "LEFT":
                             hero.x = random.randint(self.width // 1.5, self.width - 20)
@@ -109,16 +127,22 @@ class Game:
 
                 if not self.lost:
                     hero.draw()
-            self.show_msg('', 2000)  # blank screen after trial
+            self.show_msg("", 2000)  # blank screen after trial
 
     def run_online(self, client_socket, buffer_size):
+        """Play the game using client commands
+
+        Args:
+            client_socket (socket): game client
+            buffer_size (int): buffer samples
+        """
         # Play Game
         count = 0
         hero = Hero(self, self.width / 2, self.height - 20)
         done = False
         while not done:
             direction, addr = client_socket.recvfrom(buffer_size)
-            direction = int(direction.decode(encoding='UTF-8', errors='strict'))
+            direction = int(direction.decode(encoding="UTF-8", errors="strict"))
             print(direction)
 
             if len(self.aliens) == 0:
@@ -131,7 +155,11 @@ class Game:
                     for event in pygame.event.get():
                         if event.type == pygame.QUIT:
                             done = True
-                        if event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE and not self.lost:
+                        if (
+                            event.type == pygame.KEYDOWN
+                            and event.key == pygame.K_SPACE
+                            and not self.lost
+                        ):
                             self.rockets.append(Rocket(self, hero.x, hero.y))
                     if count % 50 == 0:
                         self.rockets.append(Rocket(self, hero.x, hero.y))
@@ -161,7 +189,11 @@ class Game:
                     for event in pygame.event.get():
                         if event.type == pygame.QUIT:
                             done = True
-                        if event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE and not self.lost:
+                        if (
+                            event.type == pygame.KEYDOWN
+                            and event.key == pygame.K_SPACE
+                            and not self.lost
+                        ):
                             self.rockets.append(Rocket(self, hero.x, hero.y))
                     if count % 50 == 0:
                         self.rockets.append(Rocket(self, hero.x, hero.y))
@@ -185,74 +217,134 @@ class Game:
                         hero.draw()
 
     def display_text(self, text):
+        """Show text overlay in game
+
+        Args:
+            text (str): text to display
+        """
         pygame.font.init()
-        font = pygame.font.SysFont('Arial', 150)
+        font = pygame.font.SysFont("Arial", 150)
         textsurface = font.render(text, False, (255, 255, 255))
         self.screen.blit(textsurface, (int(self.width / 2) - 120, 530))
 
     def show_msg(self, text, duration):
+        """Show text over black screen
+
+        Args:
+            text (str): text to display
+            duration (float): duration to show screen with text
+        """
         self.screen.fill((0, 0, 0))
         self.display_text(text)
         pygame.display.flip()
         pygame.time.delay(500)
         self.screen.fill((0, 0, 0))
-        self.display_text('')
+        self.display_text("")
         pygame.display.flip()
         pygame.time.delay(duration)
 
 
 class Alien:
+    """Alien class for Space Invaders game"""
+
     def __init__(self, game, x, y):
+        """Setup alien
+
+        Args:
+            game (Game): game instance
+            x (int): x position
+            y (int): y position
+        """
         self.x = x
         self.game = game
         self.y = y
         self.size = 60
 
     def draw(self):
-        pygame.draw.rect(self.game.screen,
-                         (81, 43, 88),
-                         pygame.Rect(self.x, self.y, self.size, self.size))
-        # self.y += 0.05
+        """Draw the alien on the screen"""
+        pygame.draw.rect(
+            self.game.screen,
+            (81, 43, 88),
+            pygame.Rect(self.x, self.y, self.size, self.size),
+        )
 
     def check_collision(self, game):
+        """Check if a rocket has hit the alien
+
+        Args:
+            game (Game): game instance
+        """
         for rocket in game.rockets:
-            if ((rocket.x < self.x + self.size) and (rocket.x > self.x - self.size) and
-                    (rocket.y < self.y + self.size) and (rocket.y > self.y - self.size)):
+            if (
+                (rocket.x < self.x + self.size)
+                and (rocket.x > self.x - self.size)
+                and (rocket.y < self.y + self.size)
+                and (rocket.y > self.y - self.size)
+            ):
                 game.rockets.remove(rocket)
                 game.aliens.remove(self)
 
 
 class Hero:
+    """Spaceship for Space Invaders game"""
+
     def __init__(self, game, x, y):
+        """Setup spaceship
+
+        Args:
+            game (Game): game instance
+            x (int): x position
+            y (int): y position
+        """
         self.x = x
         self.game = game
         self.y = y
 
     def draw(self):
-        pygame.draw.rect(self.game.screen,
-                         (210, 250, 251),
-                         pygame.Rect(self.x, self.y, 80, 50))
+        """Draw the spaceship on the screen"""
+        pygame.draw.rect(
+            self.game.screen, (210, 250, 251), pygame.Rect(self.x, self.y, 80, 50)
+        )
 
 
 class Generator:
-    def __init__(self, game):
-        margin = 50
-        width = 100
-        for x in range(margin, game.width - margin, width):
-            for y in range(margin, int(game.height / 2), width):
-                game.aliens.append(Alien(game, x, y))
+    """Generate aliens for Space Invaders game"""
 
-        # game.aliens.append(Alien(game, 280, 50))
+    margin = 50
+    width = 100
+
+    def __init__(self, game):
+        """Update array of aliens
+
+        Args:
+            game (Game): game instance
+        """
+        for x in range(self.margin, game.width - self.margin, self.width):
+            for y in range(self.margin, int(game.height / 2), self.width):
+                game.aliens.append(Alien(game, x, y))
 
 
 class Rocket:
+    """Rocket class for Space Invaders game"""
+
     def __init__(self, game, x, y):
+        """Setup rocket
+
+        Args:
+            game (Game): game instance
+            x (int): x position
+            y (int): y position
+        """
+
         self.x = x
         self.y = y
         self.game = game
 
     def draw(self):
-        pygame.draw.rect(self.game.screen,  # renderovací plocha
-                         (254, 52, 110),  # barva objektu
-                         pygame.Rect(self.x + 35, self.y, 15, 50))
-        self.y -= 8  # poletí po herní ploše nahoru 2px/snímek
+        """Draw rocket on the screen"""
+        pygame.draw.rect(
+            self.game.screen,
+            (254, 52, 110),
+            pygame.Rect(self.x + 35, self.y, 15, 50),
+        )
+        self.y -= 8

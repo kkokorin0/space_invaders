@@ -1,0 +1,1 @@
+Simple space invaders game for a BCI demo using the OpenBCI headset and lab streaming layer.
